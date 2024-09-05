@@ -9,6 +9,7 @@ import { DockerComposeClient } from './clients/dockerComposeClient.mjs';
 
 const paths = {
 	n8nSetupsDir: path.join(__dirname, 'n8nSetups'),
+	mockApiDataPath: path.join(__dirname, 'mockApi'),
 };
 
 async function main() {
@@ -16,6 +17,7 @@ async function main() {
 	validateN8nSetup(n8nSetupToUse);
 
 	const composeFilePath = path.join(paths.n8nSetupsDir, n8nSetupToUse);
+	const setupScriptPath = path.join(paths.n8nSetupsDir, n8nSetupToUse, 'setup.mjs');
 	const n8nTag = argv.n8nDockerTag || process.env.N8N_DOCKER_TAG || 'latest';
 	const benchmarkTag = argv.benchmarkDockerTag || process.env.BENCHMARK_DOCKER_TAG || 'latest';
 	const k6ApiToken = argv.k6ApiToken || process.env.K6_API_TOKEN || undefined;
@@ -30,8 +32,6 @@ async function main() {
 
 	const runDir = path.join(baseRunDir, n8nSetupToUse);
 	fs.emptyDirSync(runDir);
-	// Make sure the n8n container user (node) has write permissions to the run directory
-	await $`chmod 777 ${runDir}`;
 
 	const dockerComposeClient = new DockerComposeClient({
 		$: $({
@@ -42,9 +42,16 @@ async function main() {
 				BENCHMARK_VERSION: benchmarkTag,
 				K6_API_TOKEN: k6ApiToken,
 				RUN_DIR: runDir,
+				MOCK_API_DATA_PATH: paths.mockApiDataPath,
 			},
 		}),
 	});
+
+	// Run the setup script if it exists
+	if (fs.existsSync(setupScriptPath)) {
+		const setupScript = await import(setupScriptPath);
+		await setupScript.setup({ runDir });
+	}
 
 	try {
 		await dockerComposeClient.$('up', '-d', '--remove-orphans', 'n8n');

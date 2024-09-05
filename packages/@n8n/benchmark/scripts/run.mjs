@@ -1,12 +1,9 @@
 #!/usr/bin/env zx
 /**
  * Script to run benchmarks either on the cloud benchmark environment or locally.
+ * The cloud environment needs to be provisioned using Terraform before running the benchmarks.
  *
  * NOTE: Must be run in the root of the package.
- *
- * Usage:
- * 	 zx scripts/run.mjs
- *
  */
 // @ts-check
 import fs from 'fs';
@@ -148,4 +145,9 @@ function printUsage() {
 	console.log('');
 }
 
-main().catch(console.error);
+main().catch((error) => {
+	console.error('An error occurred while running the benchmarks:');
+	console.error(error);
+
+	process.exit(1);
+});
