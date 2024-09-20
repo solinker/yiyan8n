@@ -1,6 +1,6 @@
 {
   "name": "n8n-editor-ui",
-  "version": "1.59.0",
+  "version": "1.60.0",
   "description": "Workflow Editor UI for n8n",
   "main": "index.js",
   "scripts": {
@@ -63,7 +63,7 @@
     "n8n-design-system": "workspace:*",
     "n8n-workflow": "workspace:*",
     "pinia": "^2.1.6",
-    "prettier": "^3.1.0",
+    "prettier": "^3.3.3",
     "qrcode.vue": "^3.3.4",
     "stream-browserify": "^3.0.0",
     "timeago.js": "^4.0.2",
