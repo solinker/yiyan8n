@@ -135,6 +135,10 @@ export interface IExecutionBase {
 	startedAt: Date;
 	stoppedAt?: Date; // empty value means execution is still running
 	workflowId: string;
+
+	/**
+	 * @deprecated Use `status` instead
+	 */
 	finished: boolean;
 	retryOf?: string; // If it is a retry, the id of the execution it is a retry of.
 	retrySuccessId?: string; // If it failed and a retry did succeed. The id of the successful retry.
@@ -355,7 +359,7 @@ export type NumericLicenseFeature = ValuesOf<typeof LICENSE_QUOTAS>;
 
 export interface ILicenseReadResponse {
 	usage: {
-		executions: {
+		activeWorkflowTriggers: {
 			limit: number;
 			value: number;
 			warningThreshold: number;

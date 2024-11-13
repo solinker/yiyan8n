@@ -1,7 +1,8 @@
+import type { RunnerMessage, TaskResultData } from '@n8n/task-runner';
 import { mock } from 'jest-mock-extended';
+import type { INodeTypeBaseDescription } from 'n8n-workflow';
 
 import { TaskRejectError } from '../errors';
-import type { RunnerMessage, TaskResultData } from '../runner-types';
 import { TaskBroker } from '../task-broker.service';
 import type { TaskOffer, TaskRequest, TaskRunner } from '../task-broker.service';
 
@@ -69,6 +70,14 @@ describe('TaskBroker', () => {
 			expect(knownRunners.get(runnerId)?.runner).toEqual(runner);
 			expect(knownRunners.get(runnerId)?.messageCallback).toEqual(messageCallback);
 		});
+
+		it('should send node types to runner', () => {
+			const runnerId = 'runner1';
+			const runner = mock<TaskRunner>({ id: runnerId });
+			const messageCallback = jest.fn();
+
+			taskBroker.registerRunner(runner, messageCallback);
+		});
 	});
 
 	describe('registerRequester', () => {
@@ -95,7 +104,7 @@ describe('TaskBroker', () => {
 			const messageCallback = jest.fn();
 
 			taskBroker.registerRunner(runner, messageCallback);
-			taskBroker.deregisterRunner(runnerId);
+			taskBroker.deregisterRunner(runnerId, new Error());
 
 			const knownRunners = taskBroker.getKnownRunners();
 			const runnerIds = Object.keys(knownRunners);
@@ -123,7 +132,7 @@ describe('TaskBroker', () => {
 				validFor: 1000,
 				validUntil: createValidUntil(1000),
 			});
-			taskBroker.deregisterRunner(runnerId);
+			taskBroker.deregisterRunner(runnerId, new Error());
 
 			const offers = taskBroker.getPendingTaskOffers();
 			expect(offers).toHaveLength(1);
@@ -146,10 +155,14 @@ describe('TaskBroker', () => {
 				[taskId]: { id: taskId, requesterId: 'requester1', runnerId, taskType: 'mock' },
 				task2: { id: 'task2', requesterId: 'requester1', runnerId: 'runner2', taskType: 'mock' },
 			});
-			taskBroker.deregisterRunner(runnerId);
+			const error = new Error('error');
+			taskBroker.deregisterRunner(runnerId, error);
 
-			expect(failSpy).toBeCalledWith(taskId, `The Task Runner (${runnerId}) has disconnected`);
-			expect(rejectSpy).toBeCalledWith(taskId, `The Task Runner (${runnerId}) has disconnected`);
+			expect(failSpy).toBeCalledWith(taskId, error);
+			expect(rejectSpy).toBeCalledWith(
+				taskId,
+				`The Task Runner (${runnerId}) has disconnected: error`,
+			);
 		});
 	});
 
@@ -362,7 +375,7 @@ describe('TaskBroker', () => {
 			const runnerId = 'runner1';
 			const taskId = 'task1';
 
-			const message: RunnerMessage.ToN8n.TaskAccepted = {
+			const message: RunnerMessage.ToBroker.TaskAccepted = {
 				type: 'runner:taskaccepted',
 				taskId,
 			};
@@ -387,7 +400,7 @@ describe('TaskBroker', () => {
 			const taskId = 'task1';
 			const rejectionReason = 'Task execution failed';
 
-			const message: RunnerMessage.ToN8n.TaskRejected = {
+			const message: RunnerMessage.ToBroker.TaskRejected = {
 				type: 'runner:taskrejected',
 				taskId,
 				reason: rejectionReason,
@@ -414,7 +427,7 @@ describe('TaskBroker', () => {
 			const requesterId = 'requester1';
 			const data = mock<TaskResultData>();
 
-			const message: RunnerMessage.ToN8n.TaskDone = {
+			const message: RunnerMessage.ToBroker.TaskDone = {
 				type: 'runner:taskdone',
 				taskId,
 				data,
@@ -445,7 +458,7 @@ describe('TaskBroker', () => {
 			const requesterId = 'requester1';
 			const errorMessage = 'Task execution failed';
 
-			const message: RunnerMessage.ToN8n.TaskError = {
+			const message: RunnerMessage.ToBroker.TaskError = {
 				type: 'runner:taskerror',
 				taskId,
 				error: errorMessage,
@@ -475,15 +488,18 @@ describe('TaskBroker', () => {
 			const taskId = 'task1';
 			const requesterId = 'requester1';
 			const requestId = 'request1';
-			const requestType = 'input';
-			const param = 'test_param';
+			const requestParams: RunnerMessage.ToBroker.TaskDataRequest['requestParams'] = {
+				dataOfNodes: 'all',
+				env: true,
+				input: true,
+				prevNode: true,
+			};
 
-			const message: RunnerMessage.ToN8n.TaskDataRequest = {
+			const message: RunnerMessage.ToBroker.TaskDataRequest = {
 				type: 'runner:taskdatarequest',
 				taskId,
 				requestId,
-				requestType,
-				param,
+				requestParams,
 			};
 
 			const requesterMessageCallback = jest.fn();
@@ -500,8 +516,7 @@ describe('TaskBroker', () => {
 				type: 'broker:taskdatarequest',
 				taskId,
 				requestId,
-				requestType,
-				param,
+				requestParams,
 			});
 		});
 
@@ -513,7 +528,7 @@ describe('TaskBroker', () => {
 			const rpcName = 'helpers.httpRequestWithAuthentication';
 			const rpcParams = ['param1', 'param2'];
 
-			const message: RunnerMessage.ToN8n.RPC = {
+			const message: RunnerMessage.ToBroker.RPC = {
 				type: 'runner:rpc',
 				taskId,
 				callId,
@@ -537,6 +552,69 @@ describe('TaskBroker', () => {
 				callId,
 				name: rpcName,
 				params: rpcParams,
+			});
+		});
+
+		it('should handle `runner:nodetypesrequest` message', async () => {
+			const runnerId = 'runner1';
+			const taskId = 'task1';
+			const requesterId = 'requester1';
+			const requestId = 'request1';
+			const requestParams = [
+				{
+					name: 'n8n-nodes-base.someNode',
+					version: 1,
+				},
+			];
+
+			const message: RunnerMessage.ToBroker.NodeTypesRequest = {
+				type: 'runner:nodetypesrequest',
+				taskId,
+				requestId,
+				requestParams,
+			};
+
+			const requesterMessageCallback = jest.fn();
+
+			taskBroker.registerRunner(mock<TaskRunner>({ id: runnerId }), jest.fn());
+			taskBroker.setTasks({
+				[taskId]: { id: taskId, runnerId, requesterId, taskType: 'test' },
+			});
+			taskBroker.registerRequester(requesterId, requesterMessageCallback);
+
+			await taskBroker.onRunnerMessage(runnerId, message);
+
+			expect(requesterMessageCallback).toHaveBeenCalledWith({
+				type: 'broker:nodetypesrequest',
+				taskId,
+				requestId,
+				requestParams,
+			});
+		});
+	});
+
+	describe('onRequesterMessage', () => {
+		it('should handle `requester:nodetypesresponse` message', async () => {
+			const runnerId = 'runner1';
+			const taskId = 'task1';
+			const requesterId = 'requester1';
+			const requestId = 'request1';
+			const nodeTypes = [mock<INodeTypeBaseDescription>(), mock<INodeTypeBaseDescription>()];
+
+			const runnerMessageCallback = jest.fn();
+
+			taskBroker.registerRunner(mock<TaskRunner>({ id: runnerId }), runnerMessageCallback);
+			taskBroker.setTasks({
+				[taskId]: { id: taskId, runnerId, requesterId, taskType: 'test' },
+			});
+
+			await taskBroker.handleRequesterNodeTypesResponse(taskId, requestId, nodeTypes);
+
+			expect(runnerMessageCallback).toHaveBeenCalledWith({
+				type: 'broker:nodetypes',
+				taskId,
+				requestId,
+				nodeTypes,
 			});
 		});
 	});
